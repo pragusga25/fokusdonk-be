@@ -8,13 +8,15 @@ export class RedisSingleton implements AppCache {
 
   private constructor(redisUrl?: string) {
     if (redisUrl) {
-      this.client = new RedisClient(redisUrl);
+      console.log(`Connecting to Redis at ${redisUrl}`);
+      this.client = new RedisClient(redisUrl, {
+        connectionTimeout: 1 * 1000, // 1 second
+      });
     }
   }
 
   public static getInstance(): RedisSingleton {
     if (!RedisSingleton.instance) {
-      console.log('Creating Redis singleton instance...');
       RedisSingleton.instance = new RedisSingleton(config.REDIS_URL);
     }
     return RedisSingleton.instance;
@@ -23,8 +25,8 @@ export class RedisSingleton implements AppCache {
   public async get(key: string): Promise<string | null> {
     try {
       if (!this.client) return null;
-
       const ret = await this.client.get(key);
+      console.log('Cache hit: ', key);
       return ret;
     } catch {
       return null;
