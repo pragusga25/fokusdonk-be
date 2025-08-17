@@ -1,0 +1,123 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               BigInt    @id @default(autoincrement())
+  email            String    @unique
+  name             String
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  totalXP          Int       @default(0) @map("total_xp")
+  currentStreak    Int       @default(0) @map("current_streak")
+  bestStreak       Int       @default(0) @map("best_streak")
+  lastActivityDate DateTime? @map("last_activity_date")
+
+  submissions      Submission[]
+  lessonProgresses UserProgress[]
+
+  @@map("users")
+}
+
+model Lesson {
+  id             String         @id @default(uuid())
+  title          String
+  description    String?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  order          Int            @unique
+  problems       Problem[]
+  Submission     Submission[]
+  userProgresses UserProgress[]
+
+  @@map("lesson")
+}
+
+enum ProblemType {
+  MULTIPLE_CHOICE
+  INPUT
+}
+
+model Problem {
+  id             String          @id @default(uuid())
+  lessonId       String          @map("lesson_id")
+  lesson         Lesson          @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  question       String
+  type           ProblemType     @map("problem_type")
+  order          Int
+  xp             Int
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  problemOptions ProblemOption[]
+  problemAnswer  ProblemAnswer?
+
+  @@unique([lessonId, order], name: "unique_lesson_problem_order")
+}
+
+model ProblemOption {
+  id        String  @id @default(uuid())
+  problemId String  @map("problem_id")
+  problem   Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  option    String
+  isCorrect Boolean @default(false) @map("is_correct")
+  order     Int
+
+  @@map("problem_option")
+}
+
+// this is for input type problem
+model ProblemAnswer {
+  problemId String   @id @map("problem_id")
+  problem   Problem  @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  answer    Float
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("problem_answer")
+}
+
+model Submission {
+  id            String   @id @default(uuid())
+  userId        BigInt   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId      String   @map("lesson_id")
+  lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  totalProblems Int      @map("total_problems")
+  correctCount  Int      @map("correct_count")
+  earnedXP      Int      @map("earned_xp")
+  currentStreak Int      @default(0) @map("current_streak") // current streak after this submission (for idempotency)
+  bestStreak    Int      @default(0) @map("best_streak") // best streak after this submission (for idempotency)
+  totalXP       Int      @default(0) @map("total_xp") // total XP after this submission (for idempotency)
+  submittedAt   DateTime @default(now()) @map("submitted_at")
+
+  @@map("submission")
+}
+
+model UserProgress {
+  id               String    @id @default(uuid())
+  userId           BigInt    @map("user_id")
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId         String    @map("lesson_id")
+  lesson           Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  bestCorrectCount Int       @default(0) @map("best_score") // best correct count in this lesson
+  totalXP          BigInt    @default(0) @map("total_xp") // total XP earned in this lesson
+  completedAt      DateTime? @map("completed_at")
+
+  totalAttempts Int      @default(0) @map("total_attempts")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, lessonId], name: "user_lesson_unique")
+  @@map("user_progress")
+}

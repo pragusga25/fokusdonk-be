@@ -1,0 +1,129 @@
+name: Deploy
+
+on:
+  push:
+    branches: ['main']
+    paths-ignore:
+      - '.husky/**'
+      - '**.md'
+      - 'docs/**'
+      - package.json
+
+permissions:
+  packages: write
+  contents: read
+  actions: write
+
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  REPO_NAME: pragusga25/fokusdonk-be
+  PKG_NAME: fokusdonk-be-main
+  BASE_APP_DIR: $HOME/app
+  APP_ENV: production
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Copy .env.example to .env
+        run: cp .env.example .env
+
+      - name: Start PostgreSQL with Docker Compose
+        run: docker compose up -d
+
+      - name: Run Prisma migrations
+        run: bunx prisma migrate deploy
+
+      - name: Generate Prisma client
+        run: bunx prisma generate
+
+      - name: Run tests
+        run: bun run test
+
+  build:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          version: v0.9.1
+
+      # Login against a Docker registry except on PR
+      # https://github.com/docker/login-actions
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build and push Docker image with Buildx (don't push on PR)
+      # https://github.com/docker/build-push-action
+      - name: Build and push image for app
+        id: build-and-push-app
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.PKG_NAME }}:${{ github.ref_name }}
+
+      - name: Copy docker-compose.deploy.yml file via ssh
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: docker-compose.deploy.yml
+          target: ${{ env.BASE_APP_DIR }}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ec2-user
+          key: ${{ secrets.SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            export CR_PAT=${{ secrets.GITHUB_TOKEN }}
+            echo $CR_PAT | docker login ${{ env.REGISTRY }} -u ${{ github.repository }} --password-stdin
+            docker pull ${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.PKG_NAME }}:${{ github.ref_name }}
+            mkdir -p ${{ env.BASE_APP_DIR }}
+            cd ${{ env.BASE_APP_DIR }}
+
+            rm -f .env
+
+            echo DATABASE_URL="${{ secrets.DATABASE_URL }}" >> .env
+            echo REDIS_URL="${{ secrets.REDIS_URL }}" >> .env
+            echo NODE_ENV=${{ secrets.NODE_ENV }} >> .env
+            echo CORS_ORIGIN=${{ secrets.CORS_ORIGIN }} >> .env
+            echo PORT=${{ secrets.PORT }} >> .env
+            echo BACKEND_IMAGE_NAME=${{ env.REGISTRY }}/${{ env.REPO_NAME }}/${{ env.PKG_NAME }}:${{ github.ref_name }} >> .env
+
+            docker compose -f docker-compose.deploy.yml down backend || true
+            docker compose -f docker-compose.deploy.yml up -d 
+
+            docker image prune -f
+
+            docker logout ${{ env.REGISTRY }}
