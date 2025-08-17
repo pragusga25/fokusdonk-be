@@ -67,9 +67,9 @@ if (configErrs) {
 } else {
   console.log('Configuration is valid');
   console.log(`Server will run on port: ${config.PORT}`);
-  console.log(`Database URL: ${config.DATABASE_URL}`);
-  // if (config.NODE_ENV === 'development') {
-  // }
+  if (config.NODE_ENV === 'development') {
+    console.log(`Database URL: ${config.DATABASE_URL}`);
+  }
 }
 
 export { config };
