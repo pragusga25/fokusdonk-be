@@ -56,6 +56,7 @@ export const app = new Elysia()
     }
 
     set.status = 500;
+    console.log('Internal Server Error: ', error);
     return {
       name: 'InternalServerError',
       message: 'An unexpected error occurred',
