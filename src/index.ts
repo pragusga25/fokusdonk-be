@@ -66,4 +66,8 @@ export const app = new Elysia()
   .get('/', () => 'Hello Fokusdonk!')
   .listen(config.PORT);
 
+app.on('error', (error) => {
+  console.error('Server error:', error);
+});
+
 console.log('Server is running on http://localhost:3000');
